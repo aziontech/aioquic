@@ -264,9 +264,20 @@ async def perform_http_request(
         )
         method = "POST"
     else:
-        http_events = await client.get(url)
+        print(f"URL: '{url}'")
+        http_events = await client.get(url, 
+            headers={
+            "Pragma": "azion-debug-cache"
+            # "host" : "qy8aizztus.map.azionedge.net" 
+            },
+        )
+        print("djhfkahjfkhdjkfhadjkfhjkdsfh>>>>>> #####")
         method = "GET"
     elapsed = time.time() - start
+
+    # print("##########################################")
+    # print(http_events)
+    # print("##########################################")
 
     # print speed
     octets = 0
@@ -278,15 +289,41 @@ async def perform_http_request(
         % (method, urlparse(url).path, octets, elapsed, octets * 8 / elapsed / 1000000)
     )
 
-    # output response
-    if output_dir is not None:
-        output_path = os.path.join(
-            output_dir, os.path.basename(urlparse(url).path) or "index.html"
-        )
-        with open(output_path, "wb") as output_file:
-            write_response(
-                http_events=http_events, include=include, output_file=output_file
-            )
+    headers_list = []
+
+    for http_event in http_events:
+        print("##...########################################")
+        print(http_event)
+        print("##...########################################")
+
+        if isinstance(http_event, HeadersReceived):
+            # headers = b""
+            print("### IS HEADER ")
+
+            for k, v in http_event.headers:
+                print(k + b": " + v)
+                # headers += k + b": " + v + b"\r\n"
+            headers_list.append(http_event.headers)
+            
+            # if headers:
+            #     output_file.write(headers + b"\r\n")
+        # elif isinstance(http_event, DataReceived):
+        #     output_file.write(http_event.data)
+
+    print(">>...########################################")
+    print(headers_list)
+    print(">>...########################################")
+
+    # # output response
+    # if output_dir is not None:
+    #     output_path = os.path.join(
+    #         output_dir, os.path.basename(urlparse(url).path) or "index.html"
+    #     )
+    #     with open(output_path, "wb") as output_file:
+    #         write_response(
+    #             http_events=http_events, include=include, output_file=output_file
+    #         )
+    return headers_list
 
 
 def process_http_pushes(
@@ -421,137 +458,59 @@ async def main(
                 )
                 for url in urls
             ]
-            await asyncio.gather(*coros)
+            values = await asyncio.gather(*coros)
 
             # process http pushes
             process_http_pushes(client=client, include=include, output_dir=output_dir)
         client._quic.close(error_code=ErrorCode.H3_NO_ERROR)
 
+    print("$$...########################################")
+    print(values)
+    print("$$...########################################")
+
+    return values
+
+async def main_main(urlx):
+    configuration = QuicConfiguration(
+        is_client=True, alpn_protocols= H3_ALPN
+    )
+    configuration.verify_mode = ssl.CERT_NONE
+
+    return await main(
+        configuration=configuration,
+        urls=urlx,
+        data= None, #args.data,
+        include=False, #args.include,
+        output_dir= None, #args.output_dir,
+        local_port=0, #args.local_port,
+        zero_rtt=None, # args.zero_rtt,
+    )
+
+
+
+def get(urlx):
+    output = None
+
+    if uvloop is not None:
+        uvloop.install()
+
+    return asyncio.run(main_main(urlx))
+
 
 if __name__ == "__main__":
-    defaults = QuicConfiguration(is_client=True)
 
     parser = argparse.ArgumentParser(description="HTTP/3 client")
     parser.add_argument(
         "url", type=str, nargs="+", help="the URL to query (must be HTTPS)"
     )
-    parser.add_argument(
-        "--ca-certs", type=str, help="load CA certificates from the specified file"
-    )
-    parser.add_argument(
-        "--cipher-suites",
-        type=str,
-        help="only advertise the given cipher suites, e.g. `AES_256_GCM_SHA384,CHACHA20_POLY1305_SHA256`",
-    )
-    parser.add_argument(
-        "-d", "--data", type=str, help="send the specified data in a POST request"
-    )
-    parser.add_argument(
-        "-i",
-        "--include",
-        action="store_true",
-        help="include the HTTP response headers in the output",
-    )
-    parser.add_argument(
-        "--max-data",
-        type=int,
-        help="connection-wide flow control limit (default: %d)" % defaults.max_data,
-    )
-    parser.add_argument(
-        "--max-stream-data",
-        type=int,
-        help="per-stream flow control limit (default: %d)" % defaults.max_stream_data,
-    )
-    parser.add_argument(
-        "-k",
-        "--insecure",
-        action="store_true",
-        help="do not validate server certificate",
-    )
-    parser.add_argument("--legacy-http", action="store_true", help="use HTTP/0.9")
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        help="write downloaded files to this directory",
-    )
-    parser.add_argument(
-        "-q",
-        "--quic-log",
-        type=str,
-        help="log QUIC events to QLOG files in the specified directory",
-    )
-    parser.add_argument(
-        "-l",
-        "--secrets-log",
-        type=str,
-        help="log secrets to a file, for use with Wireshark",
-    )
-    parser.add_argument(
-        "-s",
-        "--session-ticket",
-        type=str,
-        help="read and write session ticket from the specified file",
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="increase logging verbosity"
-    )
-    parser.add_argument(
-        "--local-port",
-        type=int,
-        default=0,
-        help="local port to bind for connections",
-    )
-    parser.add_argument(
-        "--zero-rtt", action="store_true", help="try to send requests using 0-RTT"
-    )
-
     args = parser.parse_args()
 
     logging.basicConfig(
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.DEBUG,
     )
 
-    if args.output_dir is not None and not os.path.isdir(args.output_dir):
-        raise Exception("%s is not a directory" % args.output_dir)
+    output = get(args.url)
 
-    # prepare configuration
-    configuration = QuicConfiguration(
-        is_client=True, alpn_protocols=H0_ALPN if args.legacy_http else H3_ALPN
-    )
-    if args.ca_certs:
-        configuration.load_verify_locations(args.ca_certs)
-    if args.cipher_suites:
-        configuration.cipher_suites = [
-            CipherSuite[s] for s in args.cipher_suites.split(",")
-        ]
-    if args.insecure:
-        configuration.verify_mode = ssl.CERT_NONE
-    if args.max_data:
-        configuration.max_data = args.max_data
-    if args.max_stream_data:
-        configuration.max_stream_data = args.max_stream_data
-    if args.quic_log:
-        configuration.quic_logger = QuicFileLogger(args.quic_log)
-    if args.secrets_log:
-        configuration.secrets_log_file = open(args.secrets_log, "a")
-    if args.session_ticket:
-        try:
-            with open(args.session_ticket, "rb") as fp:
-                configuration.session_ticket = pickle.load(fp)
-        except FileNotFoundError:
-            pass
-
-    if uvloop is not None:
-        uvloop.install()
-    asyncio.run(
-        main(
-            configuration=configuration,
-            urls=args.url,
-            data=args.data,
-            include=args.include,
-            output_dir=args.output_dir,
-            local_port=args.local_port,
-            zero_rtt=args.zero_rtt,
-        )
-    )
+    print("@@@@@@@@@@@@@@@@@@@@@")
+    print(output)
