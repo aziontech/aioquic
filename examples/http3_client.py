@@ -264,7 +264,7 @@ async def perform_http_request(
         )
         method = "POST"
     else:
-        http_events = await client.get(url)
+        http_events = await client.get(url, headers={'pragma': 'azion-debug-cache'})
         method = "GET"
     elapsed = time.time() - start
 
